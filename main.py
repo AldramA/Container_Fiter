@@ -450,14 +450,22 @@ class ContainerLoadingGUI:
         width = float(self.container_vars["width"].get())
         height = float(self.container_vars["height"].get())
         
-        # Plot container outline
-        self.ax.plot([0, length, length, 0, 0], [0, 0, width, width, 0], [0, 0, 0, 0, 0], 'k-')
-        self.ax.plot([0, length, length, 0, 0], [0, 0, width, width, 0], [height, height, height, height, height], 'k-')
-        self.ax.plot([0, 0], [0, 0], [0, height], 'k-')
-        self.ax.plot([length, length], [0, 0], [0, height], 'k-')
-        self.ax.plot([length, length], [width, width], [0, height], 'k-')
-        self.ax.plot([0, 0], [width, width], [0, height], 'k-')
+        # Plot container outline with semi-transparent faces
+        xx, yy = np.meshgrid([0, length], [0, width])
+        self.ax.plot_surface(xx, yy, np.full_like(xx, 0), color="gray", alpha=0.1) # Bottom
+        self.ax.plot_surface(xx, yy, np.full_like(xx, height), color="gray", alpha=0.1) # Top
         
+        xx, zz = np.meshgrid([0, length], [0, height])
+        self.ax.plot_surface(xx, np.full_like(xx, 0), zz, color="gray", alpha=0.1) # Back
+        self.ax.plot_surface(xx, np.full_like(xx, width), zz, color="gray", alpha=0.1) # Front
+
+        yy, zz = np.meshgrid([0, width], [0, height])
+        self.ax.plot_surface(np.full_like(yy, 0), yy, zz, color="gray", alpha=0.1) # Left
+        self.ax.plot_surface(np.full_like(yy, length), yy, zz, color="gray", alpha=0.1) # Right
+
+        # Store artists for picking
+        self.plotted_items = []
+
         # Plot each item
         for item, pos in solution:
             x, y, z = pos
@@ -474,13 +482,20 @@ class ContainerLoadingGUI:
             zz = np.array([[z, z, z, z],
                           [z+dz, z+dz, z+dz, z+dz]])
             
-            # Plot faces
-            self.ax.plot_surface(xx, yy, zz, color=color, alpha=0.7)
+            # Plot faces with edges and lighting
+            light = mcolors.LightSource(azdeg=225, altdeg=10)
+            rgb = mcolors.to_rgba(color, alpha=None)
+            facecolors = light.shade(rgb, np.full(xx.shape, 1.0))
             
-            # Add text label
+            surface = self.ax.plot_surface(xx, yy, zz, facecolors=facecolors,
+                                 edgecolor='black', linewidth=0.5, alpha=0.8, picker=True)
+            self.plotted_items.append((surface, item))
+
+            # Add text label with background for better readability
             self.ax.text(x+dx/2, y+dy/2, z+dz/2, item.name,
                         horizontalalignment='center',
-                        verticalalignment='center')
+                        verticalalignment='center',
+                        bbox=dict(facecolor='white', alpha=0.5, boxstyle='round,pad=0.2'))
         
         # Set labels and title
         self.ax.set_xlabel('Length (cm)')
@@ -500,9 +515,25 @@ class ContainerLoadingGUI:
         # Switch to visualization tab
         self.notebook.select(1)
         
+        # Connect pick event
+        self.canvas.mpl_connect('pick_event', self.on_pick)
+
         # Redraw canvas
         self.canvas.draw()
         
+    def on_pick(self, event):
+        """Handle item picking in the 3D plot"""
+        # Find which item was picked
+        for artist, item in self.plotted_items:
+            if artist == event.artist:
+                # Display item info
+                info = (f"Item: {item.name}\n"
+                        f"Type: {item.item_type}\n"
+                        f"Dimensions: {item.length}×{item.width}×{item.height} cm\n"
+                        f"Weight: {item.weight:.1f} kg")
+                messagebox.showinfo("Item Details", info)
+                return
+
     def update_analysis(self, solution, score):
         """Update analysis tab with optimization results"""
         self.analysis_text.delete(1.0, tk.END)
