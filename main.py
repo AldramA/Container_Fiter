@@ -450,18 +450,28 @@ class ContainerLoadingGUI:
         width = float(self.container_vars["width"].get())
         height = float(self.container_vars["height"].get())
         
-        # Plot container outline with semi-transparent faces
-        xx, yy = np.meshgrid([0, length], [0, width])
-        self.ax.plot_surface(xx, yy, np.full_like(xx, 0), color="gray", alpha=0.1) # Bottom
-        self.ax.plot_surface(xx, yy, np.full_like(xx, height), color="gray", alpha=0.1) # Top
+        # Plot container with thickness
+        wall_thickness = 5 # in cm
         
-        xx, zz = np.meshgrid([0, length], [0, height])
-        self.ax.plot_surface(xx, np.full_like(xx, 0), zz, color="gray", alpha=0.1) # Back
-        self.ax.plot_surface(xx, np.full_like(xx, width), zz, color="gray", alpha=0.1) # Front
+        # Floor with grid pattern
+        xx, yy = np.meshgrid(np.arange(0, length, 50), np.arange(0, width, 50))
+        self.ax.plot_wireframe(xx, yy, np.full_like(xx, 0), color="peru", alpha=0.5)
 
+        # Walls (outer and inner surfaces)
+        # Back wall
+        xx, zz = np.meshgrid([0, length], [0, height])
+        self.ax.plot_surface(xx, np.full_like(xx, 0), zz, color="gray", alpha=0.3)
+        self.ax.plot_surface(xx, np.full_like(xx, wall_thickness), zz, color="darkgray", alpha=0.3)
+        # Front wall (door) - omitted for visibility
+
+        # Left wall
         yy, zz = np.meshgrid([0, width], [0, height])
-        self.ax.plot_surface(np.full_like(yy, 0), yy, zz, color="gray", alpha=0.1) # Left
-        self.ax.plot_surface(np.full_like(yy, length), yy, zz, color="gray", alpha=0.1) # Right
+        self.ax.plot_surface(np.full_like(yy, 0), yy, zz, color="gray", alpha=0.3)
+        self.ax.plot_surface(np.full_like(yy, wall_thickness), yy, zz, color="darkgray", alpha=0.3)
+
+        # Right wall
+        self.ax.plot_surface(np.full_like(yy, length), yy, zz, color="gray", alpha=0.3)
+        self.ax.plot_surface(np.full_like(yy, length - wall_thickness), yy, zz, color="darkgray", alpha=0.3)
 
         # Store artists for picking
         self.plotted_items = []
@@ -486,7 +496,7 @@ class ContainerLoadingGUI:
             light = mcolors.LightSource(azdeg=225, altdeg=10)
             rgb = mcolors.to_rgba(color, alpha=None)
             facecolors = light.shade(rgb, np.full(xx.shape, 1.0))
-            
+
             surface = self.ax.plot_surface(xx, yy, zz, facecolors=facecolors,
                                  edgecolor='black', linewidth=0.5, alpha=0.8, picker=True)
             self.plotted_items.append((surface, item))
@@ -504,10 +514,11 @@ class ContainerLoadingGUI:
         utilization = score * 100
         self.ax.set_title(f'Container Loading Solution\nVolume Utilization: {utilization:.1f}%')
         
-        # Set axis limits
+        # Set axis limits and aspect ratio
         self.ax.set_xlim([0, length])
         self.ax.set_ylim([0, width])
         self.ax.set_zlim([0, height])
+        self.ax.set_box_aspect([length, width, height]) # Ensure correct proportions
         
         # Update analysis text
         self.update_analysis(solution, score)
