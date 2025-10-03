@@ -450,14 +450,32 @@ class ContainerLoadingGUI:
         width = float(self.container_vars["width"].get())
         height = float(self.container_vars["height"].get())
         
-        # Plot container outline
-        self.ax.plot([0, length, length, 0, 0], [0, 0, width, width, 0], [0, 0, 0, 0, 0], 'k-')
-        self.ax.plot([0, length, length, 0, 0], [0, 0, width, width, 0], [height, height, height, height, height], 'k-')
-        self.ax.plot([0, 0], [0, 0], [0, height], 'k-')
-        self.ax.plot([length, length], [0, 0], [0, height], 'k-')
-        self.ax.plot([length, length], [width, width], [0, height], 'k-')
-        self.ax.plot([0, 0], [width, width], [0, height], 'k-')
+        # Plot container with thickness
+        wall_thickness = 5 # in cm
         
+        # Floor with grid pattern
+        xx, yy = np.meshgrid(np.arange(0, length, 50), np.arange(0, width, 50))
+        self.ax.plot_wireframe(xx, yy, np.full_like(xx, 0), color="peru", alpha=0.5)
+
+        # Walls (outer and inner surfaces)
+        # Back wall
+        xx, zz = np.meshgrid([0, length], [0, height])
+        self.ax.plot_surface(xx, np.full_like(xx, 0), zz, color="gray", alpha=0.3)
+        self.ax.plot_surface(xx, np.full_like(xx, wall_thickness), zz, color="darkgray", alpha=0.3)
+        # Front wall (door) - omitted for visibility
+
+        # Left wall
+        yy, zz = np.meshgrid([0, width], [0, height])
+        self.ax.plot_surface(np.full_like(yy, 0), yy, zz, color="gray", alpha=0.3)
+        self.ax.plot_surface(np.full_like(yy, wall_thickness), yy, zz, color="darkgray", alpha=0.3)
+
+        # Right wall
+        self.ax.plot_surface(np.full_like(yy, length), yy, zz, color="gray", alpha=0.3)
+        self.ax.plot_surface(np.full_like(yy, length - wall_thickness), yy, zz, color="darkgray", alpha=0.3)
+
+        # Store artists for picking
+        self.plotted_items = []
+
         # Plot each item
         for item, pos in solution:
             x, y, z = pos
@@ -474,13 +492,20 @@ class ContainerLoadingGUI:
             zz = np.array([[z, z, z, z],
                           [z+dz, z+dz, z+dz, z+dz]])
             
-            # Plot faces
-            self.ax.plot_surface(xx, yy, zz, color=color, alpha=0.7)
-            
-            # Add text label
+            # Plot faces with edges and lighting
+            light = mcolors.LightSource(azdeg=225, altdeg=10)
+            rgb = mcolors.to_rgba(color, alpha=None)
+            facecolors = light.shade(rgb, np.full(xx.shape, 1.0))
+
+            surface = self.ax.plot_surface(xx, yy, zz, facecolors=facecolors,
+                                 edgecolor='black', linewidth=0.5, alpha=0.8, picker=True)
+            self.plotted_items.append((surface, item))
+
+            # Add text label with background for better readability
             self.ax.text(x+dx/2, y+dy/2, z+dz/2, item.name,
                         horizontalalignment='center',
-                        verticalalignment='center')
+                        verticalalignment='center',
+                        bbox=dict(facecolor='white', alpha=0.5, boxstyle='round,pad=0.2'))
         
         # Set labels and title
         self.ax.set_xlabel('Length (cm)')
@@ -489,10 +514,11 @@ class ContainerLoadingGUI:
         utilization = score * 100
         self.ax.set_title(f'Container Loading Solution\nVolume Utilization: {utilization:.1f}%')
         
-        # Set axis limits
+        # Set axis limits and aspect ratio
         self.ax.set_xlim([0, length])
         self.ax.set_ylim([0, width])
         self.ax.set_zlim([0, height])
+        self.ax.set_box_aspect([length, width, height]) # Ensure correct proportions
         
         # Update analysis text
         self.update_analysis(solution, score)
@@ -500,9 +526,25 @@ class ContainerLoadingGUI:
         # Switch to visualization tab
         self.notebook.select(1)
         
+        # Connect pick event
+        self.canvas.mpl_connect('pick_event', self.on_pick)
+
         # Redraw canvas
         self.canvas.draw()
         
+    def on_pick(self, event):
+        """Handle item picking in the 3D plot"""
+        # Find which item was picked
+        for artist, item in self.plotted_items:
+            if artist == event.artist:
+                # Display item info
+                info = (f"Item: {item.name}\n"
+                        f"Type: {item.item_type}\n"
+                        f"Dimensions: {item.length}×{item.width}×{item.height} cm\n"
+                        f"Weight: {item.weight:.1f} kg")
+                messagebox.showinfo("Item Details", info)
+                return
+
     def update_analysis(self, solution, score):
         """Update analysis tab with optimization results"""
         self.analysis_text.delete(1.0, tk.END)
